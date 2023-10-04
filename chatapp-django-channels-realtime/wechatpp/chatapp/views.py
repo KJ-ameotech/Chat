@@ -4,8 +4,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Room
-from .serializers import RoomSerializer
+from .serializers import RoomSerializer, MessageSerializer
 from django.http import Http404
+from django.db.models import Q
 def rooms(request):
     rooms=Room.objects.all()
     return render(request, "rooms.html",{"rooms":rooms})
@@ -25,11 +26,35 @@ class RoomList(APIView):
         return Response(serializer.data)
 
     def post(self, request, format=None):
+        # Deserialize the request data using your RoomSerializer
         serializer = RoomSerializer(data=request.data)
+
         if serializer.is_valid():
+            room_name = serializer.validated_data['name']
+            room_slug = serializer.validated_data['slug']
+
+            # Check if a room with the same name or slug already exists
+            if Room.objects.filter(Q(name=room_name) | Q(slug=room_slug)).exists():
+                # Retrieve the first hundred messages based on the slug
+                messages = Message.objects.filter(room__slug=room_slug)[:100]
+                message_data = MessageSerializer(messages, many=True).data
+
+                print(message_data, "=================")
+
+                # Create the response data with the error message and messages
+                response_data = {
+                    "detail": "Room and slug already exist",
+                    "messages": message_data
+                }
+
+                return Response(response_data, status=status.HTTP_201_CREATED)
+
+            # Save the new room
             serializer.save()
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST) 
 
 class RoomDetail(APIView):
     """
